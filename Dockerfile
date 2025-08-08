@@ -21,7 +21,10 @@ RUN curl -Lo bazelisk.deb https://github.com/bazelbuild/bazelisk/releases/downlo
     dpkg -i bazelisk.deb && \
     rm bazelisk.deb
 
+RUN usermod -d /data/home -m nobody && mkdir -p /data/home && chown nobody:nogroup /data /data/home
+
 USER nobody
+VOLUME /home/nobody
 
 # Copy sourceserver over
 COPY --from=build /build/source-server /usr/local/bin/source-server

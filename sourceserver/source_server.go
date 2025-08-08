@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -31,30 +32,34 @@ type vcsServiceServer struct {
 
 func (s *vcsServiceServer) ensureRepo(ctx context.Context, repoURL string) (*repo, error) {
 	r := s.getRepo(repoURL)
-
 	return r, r.fetch(ctx)
 }
 
 func (s *vcsServiceServer) GetFile(ctx context.Context, req *connect.Request[v1.GetFileRequest]) (*connect.Response[v1.GetFileResponse], error) {
-	s.logger.Debug("GetFile", "repo", req.Msg.RepositoryURL, "ref", req.Msg.Ref, "localPath", req.Msg.LocalPath)
+	s.logger.Debug("GetFile", "repo", req.Msg.RepositoryURL, "ref", req.Msg.Ref, "localPath", req.Msg.LocalPath, "rootPath", req.Msg.RootPath)
 
 	localPath := req.Msg.LocalPath
 	repoURL := req.Msg.RepositoryURL
 	ref := req.Msg.Ref
+	rootPath := req.Msg.RootPath
+	bazel := false
 
 	// if go std library, check if the file exists in the repo
-	goRootPrefix := "$GOROOT/"
+	goRootPrefix := "GOROOT/"
 	if strings.HasPrefix(localPath, goRootPrefix) {
-		ref = "go1.23.4"
-		localPath = strings.TrimPrefix(localPath, goRootPrefix)
-		repoURL = "https://github.com/golang/go"
+		bazel = true
+		prefix := "external/rules_go++go_sdk+basic_gazelle__download_0" // TODO: detect this, as this is very likely not always in this path
+		localPath = filepath.Join(prefix, strings.TrimPrefix(localPath, goRootPrefix))
 	} else if strings.HasPrefix(localPath, "external/") {
-		// if bazel file, check if the file exists in the repo
-		panic("bazel files are not supported yet")
+		bazel = true
 	}
 
 	r := s.getRepo(repoURL)
-	content, err := r.showFile(ctx, ref, localPath)
+	showFile := r.showFile
+	if bazel {
+		showFile = r.showBazelFile
+	}
+	content, err := showFile(ctx, ref, rootPath, localPath)
 	if err != nil {
 		return nil, err
 	}
